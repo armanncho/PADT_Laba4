@@ -1,7 +1,6 @@
 #include <gtest/gtest.h>
 #include <stdexcept>
 
-// Подключаем наши модули
 #include "Ordinal.h"
 #include "LazySequence.h"
 #include "Stream.h"
