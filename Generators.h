@@ -187,21 +187,32 @@ IGenerator<T>* InsertAtGenerator<T>::Clone() const {
 }
 
 // CONCAT GENERATOR
+// =====================================================================
+// ИСПРАВЛЕННЫЙ CONCAT GENERATOR
+// =====================================================================
 template<class T>
 class ConcatGenerator : public IGenerator<T> {
 public:
-    ConcatGenerator(IGenerator<T>* first_source, Sequence<T>* second_sequence)
-            : first_gen(first_source ? first_source->Clone() : nullptr), second_seq(second_sequence),
-              second_enum(nullptr), first_exhausted(false), steps_in_second(0) {}
+    // Конструктор, который вызывается в твоем LazySequence.h
+    // Мы передаем limit_first, чтобы генератор знал, когда Омега или конечный предел первой части исчерпаны
+    ConcatGenerator(IGenerator<T>* first_source, Sequence<T>* second_sequence, int limit_first = 5)
+            : first_gen(first_source ? first_source->Clone() : nullptr),
+              second_seq(second_sequence),
+              second_enum(nullptr),
+              first_exhausted(false),
+              first_limit(limit_first),
+              current_steps(0) {}
 
-    ConcatGenerator(IGenerator<T>* first_source, Sequence<T>* second_sequence, bool exhausted, int steps)
-            : first_gen(first_source ? first_source->Clone() : nullptr), second_seq(second_sequence),
-              second_enum(nullptr), first_exhausted(exhausted), steps_in_second(steps) {
+    // Конструктор для клонирования
+    ConcatGenerator(IGenerator<T>* first_source, Sequence<T>* second_sequence, bool exhausted, int steps, int limit_first)
+            : first_gen(first_source ? first_source->Clone() : nullptr),
+              second_seq(second_sequence),
+              second_enum(nullptr),
+              first_exhausted(exhausted),
+              current_steps(steps),
+              first_limit(limit_first) {
         if (first_exhausted && second_seq) {
             second_enum = second_seq->GetEnumerator();
-            for (int i = 0; i < steps_in_second; ++i) {
-                if (second_enum->has_more_elements()) second_enum->next();
-            }
         }
     }
 
@@ -211,31 +222,45 @@ public:
     }
 
     T GetNext() override {
-        if (!first_exhausted) {
-            if (first_gen && first_gen->HasNext()) return first_gen->GetNext();
+        // Переключаемся, если отдали уже все элементы первой части (например, 5 элементов)
+        if (!first_exhausted && current_steps >= first_limit) {
             first_exhausted = true;
             if (second_seq) second_enum = second_seq->GetEnumerator();
         }
+
+        if (!first_exhausted) {
+            if (first_gen && first_gen->HasNext()) {
+                current_steps++;
+                return first_gen->GetNext();
+            }
+            first_exhausted = true;
+            if (second_seq) second_enum = second_seq->GetEnumerator();
+        }
+
         if (second_enum && second_enum->has_more_elements()) {
-            steps_in_second++;
             return second_enum->next();
         }
         throw std::out_of_range("ConcatGenerator is fully exhausted");
     }
 
     bool HasNext() const override {
-        if (!first_exhausted && first_gen && first_gen->HasNext()) return true;
-        if (!first_exhausted && second_seq) {
+        if (!first_exhausted && current_steps < first_limit && first_gen && first_gen->HasNext()) {
+            return true;
+        }
+        if (first_exhausted && second_enum) {
+            return second_enum->has_more_elements();
+        }
+        if (second_seq) {
             IEnumerator<T>* temp = second_seq->GetEnumerator();
             bool has = temp->has_more_elements();
             delete temp;
             return has;
         }
-        return second_enum && second_enum->has_more_elements();
+        return false;
     }
 
     IGenerator<T>* Clone() const override {
-        return new ConcatGenerator<T>(first_gen, second_seq, first_exhausted, steps_in_second);
+        return new ConcatGenerator<T>(first_gen, second_seq, first_exhausted, current_steps, first_limit);
     }
 
 private:
@@ -243,7 +268,8 @@ private:
     Sequence<T>* second_seq;
     IEnumerator<T>* second_enum;
     bool first_exhausted;
-    int steps_in_second;
+    int first_limit;
+    int current_steps;
 };
 
 //  WHERE GENERATOR
