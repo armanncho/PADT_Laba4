@@ -1,13 +1,15 @@
 #include <iostream>
 #include <stdexcept>
+#include <thread>
 
 #include "Ordinal.h"
 #include "Generators.h"
-#include "Laba2/Option.h"
 #include "LazySequence.h"
 #include "Stream.h"
 #include "Laba2/MutableArraySequence.h"
 #include "Laba2/Sequence.h"
+
+#include "Algebra.h"
 
 class ArithmeticGenerator : public IGenerator<int> {
 private:
@@ -31,9 +33,19 @@ public:
 int map_multiply_two(const int& x) { return x * 2; }
 bool filter_even(const int& x) { return x % 2 == 0; }
 
+// Функции для Анализатора событий
+bool filter_sensor_noise(const int& val) { return val >= 0; }
+int map_to_severity(const int& val) {
+    if (val > 80) return 3;
+    if (val > 40) return 2;
+    return 1;
+}
+
 void main_menu();
 void deferred_sequence_menu();
 void streams_menu();
+void task2_demo(); // ПРОТОТИП ДЛЯ ЗАДАНИЯ 2
+
 DeferredSequence<int>* build_test_sequence();
 void demo_stream_read();
 void demo_stream_seek();
@@ -50,6 +62,7 @@ void main_menu() {
         std::cout << "\n=== LABA 4 - LAZY PIPELINES & STREAMS ===\n";
         std::cout << "1. Deferred Sequence\n";
         std::cout << "2. Streams (Read/Write)\n";
+        std::cout << "3. [ ЗАДАНИЕ 2 ] Алгебра списков и ординалов\n";
         std::cout << "0. Exit\n";
 
         int choice;
@@ -59,6 +72,7 @@ void main_menu() {
         switch(choice) {
             case 1: deferred_sequence_menu(); break;
             case 2: streams_menu(); break;
+            case 3: task2_demo(); break; // ЗАПУСК ЗАДАНИЯ 2
             case 0: running = false; break;
             default: std::cout << "Invalid choice\n";
         }
@@ -66,7 +80,6 @@ void main_menu() {
 }
 
 void deferred_sequence_menu() {
-    // Используем указатель на ленивую коллекцию, чтобы не дергать базовые жадные методы
     DeferredSequence<int>* current_sequence = nullptr;
     bool running = true;
 
@@ -193,7 +206,6 @@ void deferred_sequence_menu() {
                     DeferredSequence<int>* old_sequence = current_sequence;
                     current_sequence = current_sequence->Concat(second);
                     delete old_sequence;
-                    // second не удаляем, он теперь часть конвейера
                     std::cout << "Concatenated.\n";
                     break;
                 }
@@ -318,4 +330,55 @@ void demo_stream_write() {
         std::cout << buffer_seq.Get(i) << " ";
     }
     std::cout << "\n";
+}
+
+// =====================================================================
+// РЕАЛИЗАЦИЯ ЗАДАНИЯ №2 (Анализатор событий с алгеброй)
+// =====================================================================
+void task2_demo() {
+    std::cout << "\n--- ЗАДАНИЕ 2: АЛГЕБРА ЛЕНИВЫХ СПИСКОВ И ОРДИНАЛОВ ---\n";
+
+    auto* base_gen = new ArithmeticGenerator(-20, 15);
+    auto* raw_stream = new DeferredSequence<int>(base_gen, Ordinal::infinity(), 100);
+
+    std::cout << "[АЛГЕБРА ОРДИНАЛОВ] Исходный поток бесконечен. Длина: "
+              << raw_stream->GetOrdinalLength().get_w_scale() << "w\n";
+
+    std::cout << "[АЛГЕБРА СПИСКОВ] Применяем операторы: Фильтр (|) и Гомоморфизм (>>)\n";
+
+    // МАГИЯ АЛГЕБРЫ: используем твои перегруженные операторы!
+    DeferredSequence<int>* clean_stream = (*raw_stream) | filter_sensor_noise;
+    DeferredSequence<int>* severity_stream = (*clean_stream) >> map_to_severity;
+
+    // Проекция: урезаем w до 12
+    DeferredSequence<int>* final_stream = LazyListAlgebra<int>::Project(severity_stream, 12);
+
+    std::cout << "[АЛГЕБРА ОРДИНАЛОВ] После Project(12) длина стала конечной: "
+              << final_stream->GetOrdinalLength().get_shift() << "\n\n";
+
+    std::cout << "[КОМПОНЕНТ] ЗАПУСК СИСТЕМЫ МОНИТОРИНГА...\n";
+    std::cout << "========================================================\n";
+
+    for (int i = 0; i < 15; ++i) { // Просим 15 тиков, но ординал остановит на 12
+        if (!final_stream->GetOrdinalLength().has_infinity() && i >= final_stream->GetLength()) {
+            std::cout << "[ СИСТЕМА ] Ленивый список исчерпан (достигнут предел Ординала).\n";
+            break;
+        }
+
+        int event_val = final_stream->Get(i);
+
+        std::cout << "[Tick " << i + 1 << "] Входящий код: " << event_val << "  ==>  Реакция: ";
+        if (event_val == 3) std::cout << "!!! КРИТИЧЕСКАЯ ТРЕВОГА - ОСТАНОВКА !!!";
+        else if (event_val == 2) std::cout << "! ВНИМАНИЕ - ПРОВЕРЬТЕ СИСТЕМУ !";
+        else std::cout << "Штатный режим.";
+        std::cout << "\n";
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    }
+    std::cout << "========================================================\n";
+
+    delete final_stream;
+    delete severity_stream;
+    delete clean_stream;
+    delete raw_stream;
 }

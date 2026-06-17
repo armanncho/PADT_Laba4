@@ -1,110 +1,104 @@
-#ifndef LABA4_ALGEBRA_H
-#define LABA4_ALGEBRA_H
+#ifndef LABA4_LAZY_ALGEBRA_H
+#define LABA4_LAZY_ALGEBRA_H
 
-#include <iostream>
-#include <vector>
 #include <stdexcept>
-#include <string>
 
-namespace algebraic_flow {
+#include "Ordinal.h"
+#include "LazySequence.h"
+#include "Utils.h"
 
-    struct Ordinal {
-        bool is_infinite;
-        int value;
+// =====================================================================
+// 1. АЛГЕБРА ОРДИНАЛЬНЫХ ЧИСЕЛ
+// =====================================================================
+class OrdinalAlgebra {
+public:
+    static Ordinal Add(const Ordinal& left, const Ordinal& right) {
+        return left + right;
+    }
 
-        explicit Ordinal(int v = 0) : is_infinite(false), value(v) {}
-        static Ordinal Infinity() { Ordinal o; o.is_infinite = true; return o; }
+    static Ordinal Subtract(const Ordinal& left, const Ordinal& right) {
+        return left - right;
+    }
 
-        bool operator>=(const Ordinal& other) const {
-            if (is_infinite) return true;
-            if (other.is_infinite) return false;
-            return value >= other.value;
-        }
+    static Ordinal Infimum(const Ordinal& a, const Ordinal& b) {
+        return (a < b) ? a : b;
+    }
 
-        // Некоммутативное сложение Кантора
-        static Ordinal add(const Ordinal& a, const Ordinal& b) {
-            if (b.is_infinite) return b;
-            if (a.is_infinite) return Ordinal::Infinity();
-            return Ordinal(a.value + b.value);
-        }
-    };
+    static Ordinal Supremum(const Ordinal& a, const Ordinal& b) {
+        return (a < b) ? b : a;
+    }
+};
 
-    template <typename T>
-    class IProvider {
-    public:
-        virtual ~IProvider() = default;
-        virtual T provide() = 0;
-        virtual bool has_more() const = 0;
-        virtual IProvider<T>* clone() const = 0;
-    };
+// =====================================================================
+// 2. АЛГЕБРА ЛЕНИВЫХ СПИСКОВ (АЛГЕБРАИЧЕСКИЕ ОПЕРАЦИИ)
+// =====================================================================
+template <typename T>
+class LazyListAlgebra {
+public:
+    // 2.1. СЛОЖЕНИЕ (Конкатенация)
+    static DeferredSequence<T>* Add(DeferredSequence<T>* left, Sequence<T>* right) {
+        if (!left || !right) throw std::invalid_argument("Algebra: operands cannot be null");
+        return left->Concat(right);
+    }
 
-    template <typename T>
-    class LazyStream {
-    private:
-        IProvider<T>* m_provider;
-        mutable std::vector<T> m_memo;
-        mutable bool m_drained = false;
+    // 2.2. УМНОЖЕНИЕ (Zip)
+    template <typename U>
+    static DeferredSequence<Duo<T, U>>* Multiply(DeferredSequence<T>* left, Sequence<U>* right) {
+        if (!left || !right) throw std::invalid_argument("Algebra: operands cannot be null");
+        return left->template Zip<U>(right);
+    }
 
-    public:
-        LazyStream(IProvider<T>* prov) : m_provider(prov) {}
-        ~LazyStream() { delete m_provider; }
+    // 2.3. ОГРАНИЧЕНИЕ (Глухая фильтрация)
+    // ИСПОЛЬЗУЕМ ШАБЛОН Func, ЧТОБЫ КОМПИЛЯТОР НЕ ПУТАЛСЯ В УКАЗАТЕЛЯХ!
+    template <typename Func>
+    static DeferredSequence<T>* Restrict(DeferredSequence<T>* sequence, Func predicate) {
+        if (!sequence) throw std::invalid_argument("Algebra: sequence is null");
+        return sequence->Where(predicate);
+    }
 
-        const T& get_at(int idx) const {
-            while (!m_drained && (int)m_memo.size() <= idx) {
-                if (m_provider->has_more()) m_memo.push_back(m_provider->provide());
-                else m_drained = true;
-            }
-            if (idx < 0 || idx >= (int)m_memo.size()) throw std::out_of_range("Out of bounds");
-            return m_memo[idx];
-        }
+    // 2.4. ГОМОМОРФИЗМ (Трансформация Map)
+    template <typename Func>
+    static DeferredSequence<T>* Transform(DeferredSequence<T>* sequence, Func func) {
+        if (!sequence) throw std::invalid_argument("Algebra: sequence is null");
+        return sequence->Map(func);
+    }
 
-        int get_count() const { return (int)m_memo.size(); }
-    };
+    // 2.5. ПРОЕКЦИЯ (Обрезание длины)
+    static DeferredSequence<T>* Project(DeferredSequence<T>* sequence, int limit) {
+        if (!sequence) throw std::invalid_argument("Algebra: sequence is null");
+        return sequence->Take(limit);
+    }
 
-    // --- 3. АЛГЕБРАИЧЕСКИЙ РЕАКТОР (Обработка событий) ---
-    template <typename Event, typename Response>
-    class EventReactor {
-    private:
-        Response (*m_logic_unit)(const Event&); // Указатель на функцию-реактор
+    // 2.6. СДВИГ (Пропуск элементов)
+    static DeferredSequence<T>* Shift(DeferredSequence<T>* sequence, int offset) {
+        if (!sequence) throw std::invalid_argument("Algebra: sequence is null");
+        return sequence->Skip(offset);
+    }
+};
 
-    public:
-        explicit EventReactor(Response (*logic)(const Event&)) : m_logic_unit(logic) {}
+// =====================================================================
+// 3. ПЕРЕГРУЗКА ОПЕРАТОРОВ (МАТЕМАТИЧЕСКИЙ СИНТАКСИС)
+// =====================================================================
 
-        LazyStream<Response>* react(const LazyStream<Event>& input) const {
+template <typename T>
+DeferredSequence<T>* operator+(DeferredSequence<T>& left, Sequence<T>& right) {
+    return LazyListAlgebra<T>::Add(&left, &right);
+}
 
-            return new LazyStream<Response>(new Transformer<Event, Response>(nullptr, m_logic_unit));
+template <typename T, typename U>
+DeferredSequence<Duo<T, U>>* operator*(DeferredSequence<T>& left, Sequence<U>& right) {
+    return LazyListAlgebra<T>::template Multiply<U>(&left, &right);
+}
 
-        }
-    };
+// Теперь операторы тоже используют шаблон Func. Ошибок типов больше не будет!
+template <typename T, typename Func>
+DeferredSequence<T>* operator|(DeferredSequence<T>& sequence, Func predicate) {
+    return LazyListAlgebra<T>::Restrict(&sequence, predicate);
+}
 
-    // --- 4. ВИЗУАЛИЗАТОР (Интерфейс пользователя) ---
-    class StreamVisualizer {
-    public:
-        template <typename E, typename R>
-        static void render(const LazyStream<E>& events, const LazyStream<R>& responses, int count) {
-            std::cout << "--- [Event Flow Visualization] ---" << std::endl;
-            for (int i = 0; i < count; ++i) {
-                try {
-                    std::cout << "Event ID: " << i
-                              << " | Raw: " << events.get_at(i)
-                              << " => Res: " << responses.get_at(i) << std::endl;
-                } catch (...) { break; }
-            }
-        }
-    };
+template <typename T, typename Func>
+DeferredSequence<T>* operator>>(DeferredSequence<T>& sequence, Func func) {
+    return LazyListAlgebra<T>::Transform(&sequence, func);
+}
 
-    // --- ВСПОМОГАТЕЛЬНЫЙ ТРАНСФОРМАТОР (Компонент Алгебры) ---
-    template <typename T, typename U>
-    class Transformer : public IProvider<U> {
-        IProvider<T>* m_base;
-        U (*m_rule)(const T&);
-    public:
-        Transformer(IProvider<T>* b, U (*r)(const T&)) : m_base(b), m_rule(r) {}
-        ~Transformer() { delete m_base; }
-        U provide() override { return m_rule(m_base->provide()); }
-        bool has_more() const override { return m_base->has_more(); }
-        IProvider<U>* clone() const override { return new Transformer<T, U>(m_base->clone(), m_rule); }
-    };
-
-} // namespace algebraic_flow
-#endif //LABA4_ALGEBRA_H
+#endif // LABA4_LAZY_ALGEBRA_H
