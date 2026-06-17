@@ -187,9 +187,7 @@ IGenerator<T>* InsertAtGenerator<T>::Clone() const {
 }
 
 // CONCAT GENERATOR
-// =====================================================================
-// ИСПРАВЛЕННЫЙ CONCAT GENERATOR
-// =====================================================================
+
 template<class T>
 class ConcatGenerator : public IGenerator<T> {
 public:
