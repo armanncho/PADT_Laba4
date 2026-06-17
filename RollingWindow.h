@@ -113,4 +113,4 @@ void RollingWindow<T>::reset() {
     current_size = 0;
 }
 
-#endif //LABA4_ROLLINGWINDLOW_H
+#endif //ROLLING_WINDOW_H

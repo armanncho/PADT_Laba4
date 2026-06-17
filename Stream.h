@@ -1,4 +1,5 @@
-#pragma once
+#ifndef STREAM
+#define STREAM
 
 #include <stdexcept>
 #include <string>
@@ -122,3 +123,4 @@ private:
     std::size_t  current_position_;
     bool         is_open_;
 };
+#endif //STREAM
